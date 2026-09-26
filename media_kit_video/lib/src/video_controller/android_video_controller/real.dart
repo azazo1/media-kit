@@ -104,7 +104,7 @@ class AndroidVideoController extends PlatformVideoController {
         try {
           // ----------------------------------------------
           if (!androidAttachSurfaceAfterVideoParameters) {
-            player.setOption('wid', _wid.toString());
+            player.setOption('wid', (_overlayWid ?? _wid).toString());
             player.setOption('vo', vo);
           }
           // ----------------------------------------------
@@ -158,16 +158,18 @@ class AndroidVideoController extends PlatformVideoController {
             // NOTE: Only required for --vo=gpu
             // With --vo=gpu, we need to update the android.graphics.SurfaceTexture size & notify libmpv to re-create vo.
             // In native Android, this kind of rendering is done with android.view.SurfaceView + android.view.SurfaceHolder, which offers onSurfaceChanged to handle this.
-            await _channel
-                .invokeMethod('VideoOutputManager.SetSurfaceTextureSize', {
-                  'handle': player.handle.toString(),
-                  'width': width.toString(),
-                  'height': height.toString(),
-                });
+            if (_overlayWid == null) {
+              await _channel
+                  .invokeMethod('VideoOutputManager.SetSurfaceTextureSize', {
+                    'handle': player.handle.toString(),
+                    'width': width.toString(),
+                    'height': height.toString(),
+                  });
+            }
 
             // ----------------------------------------------
             player.setOption('android-surface-size', '${width}x$height');
-            player.setOption('wid', _wid.toString());
+            player.setOption('wid', (_overlayWid ?? _wid).toString());
             player.setOption('vo', 'gpu');
           }
           // ----------------------------------------------
@@ -259,6 +261,28 @@ class AndroidVideoController extends PlatformVideoController {
     );
   }
 
+  static AndroidVideoController? of(Player player) =>
+      _controllers[player.handle];
+
+  /// Spike: 小窗期间让 videoParams 把画面打到 overlay Surface, 而不是 Flutter 纹理.
+  void attachOverlayWid(int wid) {
+    _overlayWid = wid;
+  }
+
+  /// Spike: 关掉小窗时重建 Flutter Surface, 并把 wid 交回主页面纹理.
+  Future<void> detachOverlayWid() async {
+    _overlayWid = null;
+    final data = await _channel.invokeMethod(
+      'VideoOutputManager.CreateSurface',
+      {'handle': player.handle.toString()},
+    );
+    _wid = data['wid'];
+    player.setOption('vo', 'null');
+    player.setOption('wid', '0');
+    player.setOption('wid', _wid.toString());
+    player.setOption('vo', vo);
+  }
+
   /// Disposes the instance. Releases allocated resources back to the system.
   Future<void> _dispose() async {
     // Dispose the [StreamSubscription]s.
@@ -273,6 +297,9 @@ class AndroidVideoController extends PlatformVideoController {
 
   /// Pointer address to the global object reference of `android.view.Surface` i.e. `(intptr_t)(*android.view.Surface)`.
   int? _wid;
+
+  /// Spike: overlay TextureView 的 Surface JNI 引用. 非空时 videoParams 不再抢回 Flutter 纹理.
+  int? _overlayWid;
 
   /// [Lock] used to synchronize the [_widthStreamSubscription] & [_heightStreamSubscription].
   final _lock = Lock();
