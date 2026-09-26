@@ -152,7 +152,16 @@ class AndroidVideoController extends PlatformVideoController {
           height = event.dw ?? 0;
         }
 
-        rect.value = Rect.zero;
+        final next = Rect.fromLTRB(
+          0.0,
+          0.0,
+          width.toDouble(),
+          height.toDouble(),
+        );
+        // 尺寸没变就不要清成 Rect.zero, 不然切回主窗口会抖一下宽高比.
+        if (rect.value != next) {
+          rect.value = Rect.zero;
+        }
         try {
           if (vo == 'gpu') {
             // NOTE: Only required for --vo=gpu
@@ -177,12 +186,7 @@ class AndroidVideoController extends PlatformVideoController {
           debugPrint(exception.toString());
           debugPrint(stacktrace.toString());
         }
-        rect.value = Rect.fromLTRB(
-          0.0,
-          0.0,
-          width.toDouble(),
-          height.toDouble(),
-        );
+        rect.value = next;
       }),
     );
   }
@@ -277,8 +281,20 @@ class AndroidVideoController extends PlatformVideoController {
       {'handle': player.handle.toString()},
     );
     _wid = data['wid'];
+    final width = player.state.width;
+    final height = player.state.height;
     player.setOption('vo', 'null');
     player.setOption('wid', '0');
+    // 先把 SurfaceTexture 设成视频像素尺寸再挂 vo, 避免 1x1 第一帧把宽高比拉歪.
+    if (width > 0 && height > 0) {
+      await _channel.invokeMethod('VideoOutputManager.SetSurfaceTextureSize', {
+        'handle': player.handle.toString(),
+        'width': width.toString(),
+        'height': height.toString(),
+      });
+      player.setOption('android-surface-size', '${width}x$height');
+      rect.value = Rect.fromLTRB(0.0, 0.0, width.toDouble(), height.toDouble());
+    }
     player.setOption('wid', _wid.toString());
     player.setOption('vo', vo);
   }
