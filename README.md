@@ -1,5 +1,8 @@
 # [package:media_kit](https://github.com/media-kit/media-kit)
 
+> 本分支 `feat/mini-window-wid` 正在被 [PiliPlus](https://github.com/azazo1/PiliPlus) 的自定义小窗功能使用 (PiliPlus 分支 `dsh/mini-window-spike`).
+> 这里给 `AndroidVideoController` 加了 `attachOverlayWid` / `detachOverlayWid`, 让同一个播放器把画面切到系统悬浮窗, 而不重建 Player.
+
 #### A cross-platform video player & audio player for Flutter & Dart.
 
 [![](https://img.shields.io/discord/1079685977523617792?color=33cd57&label=Discord&logo=discord&logoColor=discord)](https://discord.gg/h7qf2R9n57) [![Github Actions](https://github.com/media-kit/media-kit/actions/workflows/ci.yml/badge.svg)](https://github.com/media-kit/media-kit/actions/workflows/ci.yml)
