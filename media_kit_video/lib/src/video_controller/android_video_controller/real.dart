@@ -268,35 +268,93 @@ class AndroidVideoController extends PlatformVideoController {
   static AndroidVideoController? of(Player player) =>
       _controllers[player.handle];
 
-  /// Spike: 小窗期间让 videoParams 把画面打到 overlay Surface, 而不是 Flutter 纹理.
-  void attachOverlayWid(int wid) {
-    _overlayWid = wid;
+  /// 小窗是否已经真正接管 mpv 的输出 (wid 已经指向小窗 Surface).
+  bool get overlayAttached => _overlayAttached;
+
+  /// 把 mpv 输出切到小窗 Surface.
+  ///
+  /// mpv 0.41 运行时改 wid 会完整重建一次 vo 和解码器, 这是下限, 所以只改一次 wid.
+  /// 走 mpv_command_async, 不在 UI/platform 线程上同步等待重建.
+  /// 与 videoParams 监听, onLoad/onUnload hook 共用 [_lock], 避免 wid 被交错写入.
+  Future<void> attachOverlayWid(int wid, {int width = 0, int height = 0}) {
+    return _lock.synchronized(() async {
+      if (player.disposed) {
+        return;
+      }
+      _overlayWid = wid;
+      if (width > 0 && height > 0) {
+        await _setAsync('android-surface-size', '${width}x$height');
+      }
+      await _setAsync('wid', wid.toString());
+      _overlayAttached = true;
+    });
   }
 
-  /// Spike: 关掉小窗时重建 Flutter Surface, 并把 wid 交回主页面纹理.
-  Future<void> detachOverlayWid() async {
-    _overlayWid = null;
-    final data = await _channel.invokeMethod(
-      'VideoOutputManager.CreateSurface',
-      {'handle': player.handle.toString()},
-    );
-    _wid = data['wid'];
-    final width = player.state.width;
-    final height = player.state.height;
-    player.setOption('vo', 'null');
-    player.setOption('wid', '0');
-    // 先把 SurfaceTexture 设成视频像素尺寸再挂 vo, 避免 1x1 第一帧把宽高比拉歪.
-    if (width > 0 && height > 0) {
-      await _channel.invokeMethod('VideoOutputManager.SetSurfaceTextureSize', {
-        'handle': player.handle.toString(),
-        'width': width.toString(),
-        'height': height.toString(),
-      });
-      player.setOption('android-surface-size', '${width}x$height');
-      rect.value = Rect.fromLTRB(0.0, 0.0, width.toDouble(), height.toDouble());
+  /// 把 mpv 输出切回 Flutter 纹理. 同样只改一次 wid.
+  ///
+  /// 小窗还没真正接管时 mpv 仍画在主页面纹理上, 此时什么都不做,
+  /// 不能去重建主页面 Surface (那会释放 mpv 正在用的 Surface).
+  Future<void> detachOverlayWid() {
+    return _lock.synchronized(() async {
+      final attached = _overlayAttached;
+      _overlayWid = null;
+      _overlayAttached = false;
+      if (!attached || player.disposed) {
+        return;
+      }
+      // mpv 当前画在小窗 Surface 上, 主页面的旧 Surface 没人用, 可以安全换新.
+      final data = await _channel.invokeMethod(
+        'VideoOutputManager.CreateSurface',
+        {'handle': player.handle.toString()},
+      );
+      _wid = data['wid'];
+      final width = player.state.width;
+      final height = player.state.height;
+      // 先把 SurfaceTexture 设成视频像素尺寸再挂 vo, 避免 1x1 第一帧把宽高比拉歪.
+      if (width > 0 && height > 0) {
+        await _channel
+            .invokeMethod('VideoOutputManager.SetSurfaceTextureSize', {
+              'handle': player.handle.toString(),
+              'width': width.toString(),
+              'height': height.toString(),
+            });
+        await _setAsync('android-surface-size', '${width}x$height');
+        rect.value = Rect.fromLTRB(
+          0.0,
+          0.0,
+          width.toDouble(),
+          height.toDouble(),
+        );
+      }
+      await _setAsync('wid', _wid.toString());
+    });
+  }
+
+  /// 小窗关闭但不回播放页 (关闭小窗或换另一支视频): 只让 mpv 放下小窗 Surface,
+  /// 不重建主页面输出. 下一次 open 的 onLoad hook 会重新挂 wid/vo.
+  Future<void> releaseOverlayWid() {
+    return _lock.synchronized(() async {
+      final attached = _overlayAttached;
+      _overlayWid = null;
+      _overlayAttached = false;
+      if (!attached || player.disposed) {
+        return;
+      }
+      await _setAsync('vo', 'null');
+      await _setAsync('wid', '0');
+    });
+  }
+
+  /// 异步设置 mpv 属性. 播放器被销毁时 reply 可能永远不来, 加超时防止 [_lock] 卡死.
+  Future<void> _setAsync(String name, String value) async {
+    try {
+      await player
+          .command(['set', name, value])
+          .timeout(const Duration(seconds: 3));
+    } catch (exception, stacktrace) {
+      debugPrint(exception.toString());
+      debugPrint(stacktrace.toString());
     }
-    player.setOption('wid', _wid.toString());
-    player.setOption('vo', vo);
   }
 
   /// Disposes the instance. Releases allocated resources back to the system.
@@ -314,8 +372,11 @@ class AndroidVideoController extends PlatformVideoController {
   /// Pointer address to the global object reference of `android.view.Surface` i.e. `(intptr_t)(*android.view.Surface)`.
   int? _wid;
 
-  /// Spike: overlay TextureView 的 Surface JNI 引用. 非空时 videoParams 不再抢回 Flutter 纹理.
+  /// overlay TextureView 的 Surface JNI 引用. 非空时 videoParams 不再抢回 Flutter 纹理.
   int? _overlayWid;
+
+  /// [_overlayWid] 是否已经真正写给 mpv.
+  bool _overlayAttached = false;
 
   /// [Lock] used to synchronize the [_widthStreamSubscription] & [_heightStreamSubscription].
   final _lock = Lock();
