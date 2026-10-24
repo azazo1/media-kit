@@ -58,9 +58,9 @@ task downloadDependencies(type: Exec) {
 
         // Download all *.jar dependencies & verify their MD5 checksums.
         def filesToDownload = [
-            ["url": "https://github.com/azazo1/libmpv-android-video-build/releases/download/vnext-noseek/default-arm64-v8a.jar", "md5": "bd9a7126564de28a56ea927af59cc111", "destination": file("$buildDir/vnext-noseek/default-arm64-v8a.jar")],
-            ["url": "https://github.com/azazo1/libmpv-android-video-build/releases/download/vnext-noseek/default-armeabi-v7a.jar", "md5": "b854101b2d37547a9cf882ee26f84e67", "destination": file("$buildDir/vnext-noseek/default-armeabi-v7a.jar")],
-            ["url": "https://github.com/azazo1/libmpv-android-video-build/releases/download/vnext-noseek/default-x86_64.jar", "md5": "a3d25c80103faac045ece7489fab1a48", "destination": file("$buildDir/vnext-noseek/default-x86_64.jar")],
+            ["url": "https://github.com/azazo1/libmpv-android-video-build/releases/download/vnext-noseek2/default-arm64-v8a.jar", "md5": "5c1d4d6dfda0a3571a2193246a8bbc71", "destination": file("$buildDir/vnext-noseek2/default-arm64-v8a.jar")],
+            ["url": "https://github.com/azazo1/libmpv-android-video-build/releases/download/vnext-noseek2/default-armeabi-v7a.jar", "md5": "e99adbfc7ca0708f176666e355788af6", "destination": file("$buildDir/vnext-noseek2/default-armeabi-v7a.jar")],
+            ["url": "https://github.com/azazo1/libmpv-android-video-build/releases/download/vnext-noseek2/default-x86_64.jar", "md5": "192f154e64d38740cf25209f18352ab1", "destination": file("$buildDir/vnext-noseek2/default-x86_64.jar")],
         ]
 
         filesToDownload.each { fileInfo ->
