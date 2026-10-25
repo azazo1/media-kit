@@ -56,19 +56,39 @@ task downloadDependencies(type: Exec) {
         }
         outputDir.mkdirs()
 
+        // libmpv 发布在 vnext 时同时上传 md5.txt, 这里按清单校验,
+        // 这样 libmpv 更新 jar 后不需要改动本文件.
+        def baseUrl = "https://github.com/azazo1/libmpv-android-video-build/releases/download/vnext"
+        def md5File = file("$buildDir/vnext/md5.txt")
+        md5File.parentFile.mkdirs()
+        md5File.withOutputStream { os ->
+            os << new URL("${baseUrl}/md5.txt").openStream()
+        }
+        def md5ByFile = [:]
+        md5File.eachLine { line ->
+            def parts = line.trim().split(/\s+/)
+            if (parts.length == 2) {
+                md5ByFile[parts[1].tokenize('/').last()] = parts[0]
+            }
+        }
+
         // Download all *.jar dependencies & verify their MD5 checksums.
         def filesToDownload = [
-            ["url": "https://github.com/azazo1/libmpv-android-video-build/releases/download/vnext/default-arm64-v8a.jar", "md5": "7b99319dd82f2f5af0471b4b6eea90f6", "destination": file("$buildDir/v1.1.6/default-arm64-v8a.jar")],
-            ["url": "https://github.com/azazo1/libmpv-android-video-build/releases/download/vnext/default-armeabi-v7a.jar", "md5": "dca808ed563275ecdafcd2c002e7b5e6", "destination": file("$buildDir/v1.1.6/default-armeabi-v7a.jar")],
-            ["url": "https://github.com/azazo1/libmpv-android-video-build/releases/download/vnext/default-x86_64.jar", "md5": "aadbf500b0d7dcdd84ff3bff69bcfb93", "destination": file("$buildDir/v1.1.6/default-x86_64.jar")],
+            ["url": "${baseUrl}/default-arm64-v8a.jar", "destination": file("$buildDir/vnext/default-arm64-v8a.jar")],
+            ["url": "${baseUrl}/default-armeabi-v7a.jar", "destination": file("$buildDir/vnext/default-armeabi-v7a.jar")],
+            ["url": "${baseUrl}/default-x86_64.jar", "destination": file("$buildDir/vnext/default-x86_64.jar")],
         ]
 
         filesToDownload.each { fileInfo ->
             def destFile = fileInfo.destination
+            def expectedMD5 = md5ByFile[destFile.name]
+            if (expectedMD5 == null) {
+                throw new GradleException("MD5 for ${destFile.name} not found in md5.txt")
+            }
             if (destFile.exists()) {
                 def calculatedMD5 = MessageDigest.getInstance("MD5").digest(Files.readAllBytes(destFile.toPath())).encodeHex().toString()
 
-                if (calculatedMD5 != fileInfo.md5) {
+                if (calculatedMD5 != expectedMD5) {
                     destFile.delete()
                     println "MD5 mismatch. File deleted: ${destFile}"
                 }
@@ -83,7 +103,7 @@ task downloadDependencies(type: Exec) {
                 }
 
                 def calculatedMD5 = MessageDigest.getInstance("MD5").digest(Files.readAllBytes(destFile.toPath())).encodeHex().toString()
-                if (calculatedMD5 != fileInfo.md5) {
+                if (calculatedMD5 != expectedMD5) {
                     throw new GradleException("MD5 verification failed for ${destFile}")
                 }
             }
